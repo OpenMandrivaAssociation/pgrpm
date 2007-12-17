@@ -12,7 +12,6 @@ Source0: %{name}-%{version}.tar.bz2
 License: GPL
 Group: Databases
 Url: http://pgfoundry.org/projects/pgrpm/
-BuildRoot: %{_tmppath}/%{name}-buildroot
 BuildRequires: postgresql-devel
 BuildRequires: rpm-devel
 %if %{?pgmodules_req:1}%{!?pgmodules_req:0}
