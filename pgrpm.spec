@@ -4,7 +4,7 @@
 %define version 0.1.5.1
 %define release %mkrel 3
 
-Summary: rpm binding for postgresql
+Summary: RPM binding for postgresql
 Name: %{name}
 Version: %{version}
 Release: %{release}
