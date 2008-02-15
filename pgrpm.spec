@@ -1,8 +1,8 @@
 # $Id: pgrpm.spec 100595 2006-12-20 20:44:47Z nanardon $
 
 %define name pgrpm
-%define version 0.1.5.1
-%define release %mkrel 3
+%define version 0.1.7
+%define release %mkrel 1
 
 Summary: RPM binding for postgresql
 Name: %{name}
@@ -27,7 +27,7 @@ sorting and checking strings version like rpm does.
 %setup -q
 
 %build
-%make
+make
 
 cat > README.urpmi <<EOF
 Remember to run %_datadir/pgsql/contrib/pgrpm.sql or
@@ -52,6 +52,3 @@ rm -rf $RPM_BUILD_ROOT
 %doc README*
 %_libdir/pgsql/*.so
 %_datadir/pgsql/contrib/*
-
-
-
