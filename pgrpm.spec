@@ -2,7 +2,7 @@
 
 %define name pgrpm
 %define version 0.1.7
-%define release %mkrel 3
+%define release %mkrel 4
 
 Summary: RPM binding for postgresql
 Name: %{name}
