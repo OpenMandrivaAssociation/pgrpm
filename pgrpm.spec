@@ -52,5 +52,5 @@ rm -rf $RPM_BUILD_ROOT
 %files
 %defattr(-,root,root)
 %doc README*
-%_libdir/pgsql/*.so
-%_datadir/pgsql/contrib/*
+%_libdir/postgresql/*.so
+%_datadir/postgresql/contrib/*
