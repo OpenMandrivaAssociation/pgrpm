@@ -1,15 +1,14 @@
 # $Id: pgrpm.spec 100595 2006-12-20 20:44:47Z nanardon $
 
 %define name pgrpm
-%define version 0.1.7
-%define release %mkrel 4
+%define version 0.1.8
+%define release %mkrel 1
 
 Summary: RPM binding for postgresql
 Name: %{name}
 Version: %{version}
 Release: %{release}
 Source0: %{name}-%{version}.tar.bz2
-Patch0:  pgrpm-null-ptr-depevr.patch
 License: GPL
 Group: Databases
 Url: http://pgfoundry.org/projects/pgrpm/
@@ -26,7 +25,6 @@ sorting and checking strings version like rpm does.
 
 %prep
 %setup -q
-%patch0 -p0 -b .null-ptr-dep
 
 %build
 make
