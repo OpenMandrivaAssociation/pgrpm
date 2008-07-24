@@ -1,8 +1,11 @@
 # $Id: pgrpm.spec 100595 2006-12-20 20:44:47Z nanardon $
 
+%define _pg_pkglibdir %([ -f /usr/bin/pg_config ] && /usr/bin/pg_config --pkglibdir)
+%define _pg_datadir %([ -f /usr/bin/pg_config ] && /usr/bin/pg_config --sharedir)
+
 %define name pgrpm
 %define version 0.1.9
-%define release %mkrel 1
+%define release %mkrel 2
 
 Summary: RPM binding for postgresql
 Name: %{name}
@@ -30,8 +33,8 @@ sorting and checking strings version like rpm does.
 make
 
 cat > README.urpmi <<EOF
-Remember to run %_datadir/pgsql/contrib/pgrpm.sql or
-%_datadir/pgsql/contrib/pgrpm-update.sql to finalyze
+Remember to run %_pg_datadir/contrib/pgrpm.sql or
+%_pg_datadir/contrib/pgrpm-update.sql to finalyze
 installation into your postgresql server.
 Something like:
   psql -U postgres template1 < FILE
@@ -50,5 +53,5 @@ rm -rf $RPM_BUILD_ROOT
 %files
 %defattr(-,root,root)
 %doc README*
-%_libdir/postgresql/*.so
-%_datadir/postgresql/contrib/*
+%_pg_pkglibdir/*.so
+%_pg_datadir/contrib/*
