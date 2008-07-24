@@ -1,7 +1,7 @@
 # $Id: pgrpm.spec 100595 2006-12-20 20:44:47Z nanardon $
 
 %define name pgrpm
-%define version 0.1.8
+%define version 0.1.9
 %define release %mkrel 1
 
 Summary: RPM binding for postgresql
