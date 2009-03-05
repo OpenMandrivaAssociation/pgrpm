@@ -5,13 +5,18 @@
 
 %define name pgrpm
 %define version 0.1.9
-%define release %mkrel 2
+%define release %mkrel 3
 
 Summary: RPM binding for postgresql
 Name: %{name}
 Version: %{version}
 Release: %{release}
 Source0: %{name}-%{version}.tar.bz2
+# Thanks to rpm.org to break compatibilty in way
+# they force us to make a patch, showing warnings
+# would have been anough w/o forcing everyone to make
+# patch
+Patch0:  rpm-44-compat.patch
 License: GPL
 Group: Databases
 Url: http://pgfoundry.org/projects/pgrpm/
@@ -28,6 +33,7 @@ sorting and checking strings version like rpm does.
 
 %prep
 %setup -q
+%patch0 -b .rpm44-compat
 
 %build
 make
