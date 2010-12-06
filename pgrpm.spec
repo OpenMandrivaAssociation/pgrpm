@@ -7,7 +7,7 @@
 Summary:	RPM binding for postgresql
 Name:		pgrpm
 Version:	0.1.9
-Release:	%mkrel 1
+Release:	%mkrel 6
 Source0:	%{name}-%{version}.tar.bz2
 Patch0:		pgrpm-0.1.9-rpm5.patch
 Patch1:		pgrpm-0.1.9-new-pgsql-api-compat.h
