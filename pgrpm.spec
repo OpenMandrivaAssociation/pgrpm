@@ -4,22 +4,18 @@
 %define _pg_pkglibdir %([ -f /usr/bin/pg_config ] && /usr/bin/pg_config --pkglibdir)
 %define _pg_datadir %([ -f /usr/bin/pg_config ] && /usr/bin/pg_config --sharedir)
 
-%define name pgrpm
-%define version 0.1.9
-%define release %mkrel 5
-
-Summary: RPM binding for postgresql
-Name: %{name}
-Version: %{version}
-Release: %{release}
-Source0: %{name}-%{version}.tar.bz2
-Patch0:  pgrpm-0.1.9-rpm5.patch
-Patch1:  pgrpm-0.1.9-new-pgsql-api-compat.h
-License: GPL
-Group: Databases
-Url: http://pgfoundry.org/projects/pgrpm/
-BuildRoot: %{_tmppath}/%{name}-buildroot
-BuildRequires: rpm-devel
+Summary:	RPM binding for postgresql
+Name:		pgrpm
+Version:	0.1.9
+Release:	%mkrel 1
+Source0:	%{name}-%{version}.tar.bz2
+Patch0:		pgrpm-0.1.9-rpm5.patch
+Patch1:		pgrpm-0.1.9-new-pgsql-api-compat.h
+License:	GPL
+Group:		Databases
+Url:		http://pgfoundry.org/projects/pgrpm/
+BuildRoot:	%{_tmppath}/%{name}-buildroot
+BuildRequires:	rpm-devel
 %if %{?pgmodules_req:1}%{!?pgmodules_req:0}
 %pgmodules_req
 %endif
