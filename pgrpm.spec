@@ -14,6 +14,7 @@ Version: %{version}
 Release: %{release}
 Source0: %{name}-%{version}.tar.bz2
 Patch0:  pgrpm-0.1.9-rpm5.patch
+Patch1:  pgrpm-0.1.9-new-pgsql-api-compat.h
 License: GPL
 Group: Databases
 Url: http://pgfoundry.org/projects/pgrpm/
@@ -30,6 +31,7 @@ sorting and checking strings version like rpm does.
 %prep
 %setup -q
 %patch0 -b .rpm5~
+%patch1 -b .newapi~
 
 %build
 %make CFLAGS="%{optflags}" LDFLAGS="%{ldflags}"
