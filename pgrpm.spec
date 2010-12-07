@@ -15,7 +15,7 @@ License:	GPL
 Group:		Databases
 Url:		http://pgfoundry.org/projects/pgrpm/
 BuildRoot:	%{_tmppath}/%{name}-buildroot
-BuildRequires:	rpm-devel
+BuildRequires:	rpm-devel postgresql-devel
 %if %{?pgmodules_req:1}%{!?pgmodules_req:0}
 %pgmodules_req
 %endif
