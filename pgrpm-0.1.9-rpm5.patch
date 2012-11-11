@@ -1,0 +1,453 @@
+--- pgrpm-0.1.9/Makefile.rpm5~	2010-12-05 21:10:31.689152004 +0100
++++ pgrpm-0.1.9/Makefile	2010-12-05 21:10:33.402155357 +0100
+@@ -11,8 +11,8 @@ MODULE_big = $(MYNAME)
+ DATA_built = $(DATASRCS:.in=) $(MYNAME)-update.sql
+ DOCS = README.$(MYNAME) ChangeLog
+ OBJS = $(SRCS:.c=.o)
+-SHLIB_LINK = -lrpm
+-PG_CPPFLAGS = $(shell sh ./rpmvers.sh) -I/usr/include/rpm/
++SHLIB_LINK = $(shell pkg-config --libs rpm) $(LDFLAGS)
++PG_CPPFLAGS = $(shell pkg-config --cflags rpm) $(shell pg_config --cflags)
+ 
+ PGXS := $(shell pg_config --pgxs)
+ include $(PGXS)
+--- pgrpm-0.1.9/pgheader.c.rpm5~	2008-07-24 08:51:10.000000000 +0200
++++ pgrpm-0.1.9/pgheader.c	2010-12-05 21:07:40.785416008 +0100
+@@ -8,45 +8,13 @@
+ #include "pgrpmlib.h"
+ #include "pgheader.h"
+ 
+-#if RPMMAJOR == 5
+-static int headerGetEntry(Header h, int_32 tag, hTYP_t type, void ** p, hCNT_t c)
+-{
+-    HE_t he = calloc(1, sizeof(*he));
+-    int rc;
+-	
+-    /* Always ensure to initialize */
+-    *(void **)p = NULL;
+-    he->tag = (rpmTag)tag;
+-    rc = headerGet(h, he, 0);
+-    if (rc) {
+-	if (type) *type = he->t;
+-	if (p) *(void **) p = he->p.ptr;
+-	if (c) *c = he->c;
+-    }
+-    if (he) free(he);
+-
+-    return rc;
+-}
+-
+-static void * headerFreeData(const void * data, rpmTagType type)
+-{
+-    if (data)
+-	free((void *)data);
+-    return NULL;
+-}
+-#endif
+-
+ bytea *
+ headergetDatum(Header h)
+ {
+     bytea * out;
+-#if RPMMAJOR == 5
+     size_t size = 0;
+     void * ptr = headerUnload(h, &size);
+-#else
+-    void * ptr = headerUnload(h);
+-    int size = headerSizeof(h, HEADER_MAGIC_NO);
+-#endif
++
+     out = palloc(size + VARHDRSZ);
+ #ifdef SET_VARSIZE
+     SET_VARSIZE(out, size + VARHDRSZ);
+@@ -104,7 +72,17 @@ header_bytea_in(PG_FUNCTION_ARGS)
+     rpmtsSetVSFlags(ts, _RPMVSF_NOSIGNATURES);
+ 
+     fd = fdDup(temp);
+-    rc = rpmReadHeader(ts, fd, &h, &msg);
++
++    {
++	const char item[] = "Header";
++	rc = rpmpkgRead(item, fd, &h, &msg);
++	if(rc == RPMRC_NOTFOUND) {
++	    h = NULL;
++	}
++	else if (rc != RPMRC_OK)
++	    rpmlog(RPMLOG_ERR, "%s: %s: %s : error code: %d\n", "rpmpkgRead", item, msg, rc);
++    }
++
+     close(temp);
+     fdClose(fd);
+     if (rc != RPMRC_OK) {
+@@ -118,6 +96,8 @@ header_bytea_in(PG_FUNCTION_ARGS)
+     out = headergetDatum(h);
+     h = headerFree(h);
+     ts = rpmtsFree(ts);
++    msg = _free(msg);
++
+     PG_RETURN_BYTEA_P(out);
+ }
+ 
+@@ -129,11 +109,12 @@ header_in(PG_FUNCTION_ARGS)
+     Datum dest;
+     rpmts ts = rpmtsCreate();
+     const char * msg = NULL;
++    pgpDig dig = rpmtsDig(ts);
+     
+     rpmtsSetVSFlags(ts, _RPMVSF_NOSIGNATURES);
+     
+     dest = DirectFunctionCall1(byteain, CStringGetDatum(PG_GETARG_CSTRING(0)));
+-    if (headerCheck(ts, VARDATA(dest), VARSIZE(dest)-VARHDRSZ, &msg) != RPMRC_OK) {
++    if (headerCheck(dig, VARDATA(dest), VARSIZE(dest)-VARHDRSZ, &msg) != RPMRC_OK) {
+         ereport(ERROR,
+             (errcode(ERRCODE_INVALID_BINARY_REPRESENTATION),
+             errmsg("Problem while reading header: %s", msg)));
+@@ -226,7 +207,7 @@ header_hastag(PG_FUNCTION_ARGS)
+     int res;
+     
+     res = headerIsEntry(h, tag);
+-    headerFree(h);
++    h = headerFree(h);
+ 
+     PG_RETURN_BOOL(res);
+ }
+@@ -238,8 +219,8 @@ header_size(PG_FUNCTION_ARGS)
+ {
+     int size = 0;
+     Header h = Datumgetheader(PG_GETARG_BYTEA_P_COPY(0), NULL);
+-    size = headerSizeof(h, HEADER_MAGIC_NO);
+-    headerFree(h);
++    size = headerSizeof(h);
++    h = headerFree(h);
+     PG_RETURN_INT32(size);
+ }
+ 
+@@ -248,21 +229,27 @@ PG_FUNCTION_INFO_V1(header_gettagn);
+ Datum
+ header_gettagn(PG_FUNCTION_ARGS)
+ {
++    HE_t he = (HE_t)memset(alloca(sizeof(*he)), 0, sizeof(*he));
+     Header h = Datumgetheader(PG_GETARG_BYTEA_P_COPY(0), NULL);
+-    int tag = PG_GETARG_INT32(1);
+-    int num = PG_GETARG_INT32(2);
+-    int_32 tagtype = 0;
+-    void *ret;
+-    int_32 count = 0;
++    rpmTag tag = PG_GETARG_INT32(1);
++    uint32_t num = PG_GETARG_INT32(2);
++    rpmTag tagtype = 0;
++    uint32_t count = 0;
+     text * res = NULL;
+-    int size;
+-    if (headerGetEntry(h, tag, &tagtype, &ret, &count)) {
++    size_t size;
++
++    he->tag = tag;
++    if (headerGet(h, he, 0)) {
++	  count = he->c;
++	  tagtype = he->t;
+         switch(tagtype) {
+             case RPM_STRING_TYPE:
+                 if(num == 0) { /* this kind of tag has only one entry, if another is want, no way */
+-                    size = strlen(ret) + VARHDRSZ;
++		    const char * str = he->p.str;
++
++                    size = strlen(str) + VARHDRSZ;
+                     res = palloc(size);
+-                    memcpy(VARDATA(res), ret, size - VARHDRSZ);
++                    memcpy(VARDATA(res), str, size - VARHDRSZ);
+ #ifdef SET_VARSIZE
+                     SET_VARSIZE(res,size);
+ #else
+@@ -272,8 +259,7 @@ header_gettagn(PG_FUNCTION_ARGS)
+                 break;
+             case RPM_STRING_ARRAY_TYPE:
+                 if (num >= 0 && num <= count) {
+-                    char ** sptr;
+-                    sptr = (char **)ret;
++                    const char ** sptr = he->p.argv;
+                     size = strlen(sptr[num]) + VARHDRSZ;
+                     res = palloc(size);
+                     memcpy(VARDATA(res), sptr[num], size - VARHDRSZ);
+@@ -284,13 +270,14 @@ header_gettagn(PG_FUNCTION_ARGS)
+ #endif
+                 }
+                 break;
+-            case RPM_INT8_TYPE:
+-            case RPM_INT16_TYPE:
+-            case RPM_INT32_TYPE:
++            case RPM_UINT8_TYPE:
++            case RPM_UINT16_TYPE:
++            case RPM_UINT32_TYPE:
+                 if (num >= 0 && num <= count) {
+-                    int *r;
++                    uint32_t *r;
+                     char * fmt = palloc(16);
+-                    r = (int *)ret;
++
++                    r = he->p.ui32p;
+                     snprintf(fmt, 16, "%d", r[num]);
+                     size = strlen(fmt) + VARHDRSZ;
+                     res = palloc(size);
+@@ -304,9 +291,10 @@ header_gettagn(PG_FUNCTION_ARGS)
+                 break;
+             case RPM_BIN_TYPE:
+                 if(num == 0) { /* same idea than for string */
++		    void *ptr = he->p.ptr;
+                     size = count * sizeof(char) + VARHDRSZ;
+                     res = palloc(size);
+-                    memcpy(VARDATA(res), ret, count);
++                    memcpy(VARDATA(res), ptr, count);
+ #ifdef SET_VARSIZE
+                     SET_VARSIZE(res, size);
+ #else
+@@ -320,8 +308,8 @@ header_gettagn(PG_FUNCTION_ARGS)
+         }
+     }
+     
+-    headerFreeData(ret, tagtype);
+-    headerFree(h);
++    free(he->p.ptr);
++    h = headerFree(h);
+     
+     if(res)
+         PG_RETURN_TEXT_P(res);
+@@ -339,23 +327,29 @@ header_query(PG_FUNCTION_ARGS)
+     int                  max_calls;
+     if (SRF_IS_FIRSTCALL()) {
+         MemoryContext   oldcontext;
++	HE_t he = (HE_t)memset(alloca(sizeof(*he)), 0, sizeof(*he));
+         Header h = Datumgetheader(PG_GETARG_BYTEA_P_COPY(0), NULL);
+-        int tag = PG_GETARG_INT32(1);
+-        int_32 tagtype = 0;
+-        void *ret;
++        rpmTag tag = PG_GETARG_INT32(1);
++        rpmTag tagtype = 0;
+         Datum **fmtret = NULL;
+-        int_32 count = 0;
++        uint32_t count = 0;
++
+         funcctx = SRF_FIRSTCALL_INIT();
+         oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
+-        if (headerGetEntry(h, tag, &tagtype, &ret, &count)) {
++	he->tag = tag;
++        if (headerGet(h, he, 0)) {
++	    tagtype = he->t;
++	    count = he->c;
+             switch(tagtype) {
+                 case RPM_STRING_TYPE:
+                 {
+-                    int size;
++                    size_t size;
++		    const char * str = he->p.str;
++
+                     fmtret = (Datum **) palloc(sizeof(Datum *));
+-                    size = strlen(ret) + VARHDRSZ;
++                    size = strlen(str) + VARHDRSZ;
+                     fmtret[0] = palloc(size);
+-                    memcpy(VARDATA(fmtret[0]), ret, size - VARHDRSZ);
++                    memcpy(VARDATA(fmtret[0]), str, size - VARHDRSZ);
+ #ifdef SET_VARSIZE
+                     SET_VARSIZE(fmtret[0], size);
+ #else
+@@ -367,11 +361,12 @@ header_query(PG_FUNCTION_ARGS)
+                 case RPM_STRING_ARRAY_TYPE:
+                 {
+                     int i;
+-                    char ** sptr;
++                    const char ** sptr = he->p.argv;
++
+                     fmtret = (Datum **) palloc(count * sizeof(Datum *));
+-                    sptr = (char **)ret;
+                     for (i = 0; i < count; i ++) {
+-                        int size = strlen(sptr[i]) + VARHDRSZ;
++                        size_t size = strlen(sptr[i]) + VARHDRSZ;
++
+                         fmtret[i] = palloc(size);
+                         memcpy(VARDATA(fmtret[i]), sptr[i], size - VARHDRSZ);
+ #ifdef SET_VARSIZE
+@@ -383,17 +378,18 @@ header_query(PG_FUNCTION_ARGS)
+                     funcctx->max_calls = count;
+                 }
+                 break;
+-                case RPM_INT8_TYPE:
+-                case RPM_INT16_TYPE:
+-                case RPM_INT32_TYPE:
++                case RPM_UINT8_TYPE:
++                case RPM_UINT16_TYPE:
++                case RPM_UINT32_TYPE:
+                 {
+                     int i;
+-                    int *r;
++                    uint32_t *r = he->p.ui32p;
++
+                     fmtret = (Datum **) palloc(count * sizeof(Datum *));
+-                    r = (int *)ret;
++
+                     for (i = 0; i < count; i ++) {
+                         char * fmt = palloc(16);
+-                        int size;
++                        size_t size;
+                         snprintf(fmt, 16, "%d", r[i]);
+                         size = strlen(fmt) + VARHDRSZ;
+                         fmtret[i] = palloc(size);
+@@ -410,9 +406,11 @@ header_query(PG_FUNCTION_ARGS)
+                 break;
+                 case RPM_BIN_TYPE:
+                 {
++		    void * ptr = he->p.ptr;
++
+                     fmtret = (Datum **) palloc(sizeof(Datum *));
+                     fmtret[0] = palloc(count * sizeof(char) + VARHDRSZ);
+-                    memcpy(VARDATA(fmtret[0]), ret, count);
++                    memcpy(VARDATA(fmtret[0]), ptr, count);
+ #ifdef SET_VARSIZE
+                     SET_VARSIZE(fmtret[0], count + VARHDRSZ);
+ #else
+@@ -426,8 +424,8 @@ header_query(PG_FUNCTION_ARGS)
+             }
+             funcctx->user_fctx = fmtret;
+         }
+-	headerFreeData(ret, tagtype);
+-        headerFree(h);
++	_free(he->p.ptr);
++        h = headerFree(h);
+         MemoryContextSwitchTo(oldcontext);
+     }
+     funcctx = SRF_PERCALL_SETUP();
+@@ -592,6 +590,8 @@ Datum
+ header_deps_query(PG_FUNCTION_ARGS)
+ {
+     FuncCallContext     *funcctx;
++    HE_t he = (HE_t)memset(alloca(sizeof(*he)), 0, sizeof(*he));
++
+     
+     if (SRF_IS_FIRSTCALL()) {
+         MemoryContext   oldcontext;
+@@ -668,12 +668,24 @@ header_deps_query(PG_FUNCTION_ARGS)
+         funcctx->user_fctx = pgds;
+         pgds->tag = deptag;
+         pgds->h = h;
+-        (void) headerGetEntry(h, deptag, &pgds->Nametype,
+-                (void **) &pgds->Name, &pgds->Namecount);
+-        (void) headerGetEntry(h, depFtag, &pgds->Flagstype, 
+-                (void **) &pgds->Flags, &pgds->Flagscount);
+-        (void) headerGetEntry(h, depEVRtag, &pgds->EVRtype, 
+-                (void **) &pgds->EVR, &pgds->EVRcount);
++	he->tag = deptag;
++        if(headerGet(h, he, 0)) {
++		pgds->Nametype = he->t;
++		pgds->Name = he->p.argv;
++		pgds->Namecount = he->c;
++	}
++	he->tag = depFtag;
++        if(headerGet(h, he, 0)) {
++		pgds->Flagstype = he->t;
++		pgds->Flags = he->p.ui32p;
++		pgds->Flagscount = he->c;
++	}
++	he->tag = depEVRtag;
++        if(headerGet(h, he, 0)) {
++		pgds->EVRtype = he->t;
++		pgds->EVR = he->p.argv;
++		pgds->EVRcount = he->c;
++	}
+         funcctx->max_calls = pgds->Namecount;
+     }
+     funcctx = SRF_PERCALL_SETUP();
+@@ -716,9 +728,9 @@ header_deps_query(PG_FUNCTION_ARGS)
+     else    /* do when there is no more left */
+     {
+         pgds_t pgds = funcctx->user_fctx;
+-        headerFreeData(pgds->Name, pgds->Nametype);
+-        headerFreeData(pgds->EVR, pgds->EVRtype);
+-        headerFreeData(pgds->Flags, pgds->Flagstype);
++	_free(pgds->Name);
++	_free(pgds->EVR);
++	_free(pgds->Flags);
+         pgds->h = headerFree(pgds->h);
+         pfree(pgds); pgds = NULL;
+         
+--- pgrpm-0.1.9/pgheader.h.rpm5~	2008-07-24 08:30:26.000000000 +0200
++++ pgrpm-0.1.9/pgheader.h	2010-12-05 21:07:40.786149421 +0100
+@@ -6,15 +6,15 @@ struct pgds_s {
+     rpmTag tag;
+     Header h;
+     const char ** Name;
+-    int_32 Nametype;
+-    int_32 Namecount;
+-    const int_32 * Flags;
+-    int_32 Flagstype;
+-    int_32 Flagscount;
++    uint32_t Nametype;
++    uint32_t Namecount;
++    const uint32_t * Flags;
++    uint32_t Flagstype;
++    uint32_t Flagscount;
+     const char ** EVR;
+-    int_32 EVRtype;
+-    int_32 EVRcount;
+-    uint_32 * Color;
++    uint32_t EVRtype;
++    uint32_t EVRcount;
++    uint32_t * Color;
+ };
+ 
+ typedef struct pgds_s * pgds_t;
+--- pgrpm-0.1.9/pgrpm.h.rpm5~	2008-07-24 08:30:26.000000000 +0200
++++ pgrpm-0.1.9/pgrpm.h	2010-12-05 21:07:40.795149559 +0100
+@@ -6,42 +6,21 @@
+ 
+ #define HEADER_MAGIC_SIZE 4 /* Size of MAGIC header */
+ 
+-#if RPMMAJOR == 5
+ #include <stdint.h>
+ 
+-#include <rpm/rpmio.h>
+-#include <rpm/rpmcb.h>
+-#include <rpm/rpmpgp.h> /* for pgpHexCvt */
+-#include <rpm/rpmevr.h>
+-#include <rpm/rpmtag.h>
+-#include <rpm/pkgio.h>
+-#include <rpm/rpmlib.h>
+-#include <rpm/rpmts.h>
+-#include <rpm/rpmfi.h>
+-#include <rpm/rpmds.h>
++#include <rpmtypes.h>
++#include <rpmrc.h>
++#include <rpmio.h>
++#include <rpmcb.h>
++#include <rpmpgp.h> /* for pgpHexCvt */
++#include <rpmevr.h>
++#include <rpmtag.h>
++#include <rpmts.h>
++#include <rpmfi.h>
++#include <rpmds.h>
++#include <rpmcli.h>
++#include <pkgio.h>
+ 
+-#define RPM_CHAR_TYPE           RPM_UINT8_TYPE
+-#define RPM_INT8_TYPE           RPM_UINT8_TYPE
+-#define RPM_INT16_TYPE          RPM_UINT16_TYPE
+-#define RPM_INT32_TYPE          RPM_UINT32_TYPE
+-
+-typedef uint32_t        int_32;
+-typedef uint32_t        uint_32;
+-
+-typedef uint32_t *      hTAG_t;
+-typedef uint32_t *      hTYP_t;
+-typedef uint32_t *      hCNT_t;
+-
+-#else
+-
+-#include <rpm/rpmlib.h>
+-#include <rpm/header.h>
+-#include <rpm/rpmts.h>
+-#include <rpm/rpmfi.h>
+-#include <rpm/rpmds.h>
+-#include <rpm/rpmpgp.h> /* for pgpHexCvt */
+-
+-#endif
+ 
+ /*
+ #define PGRPM_DEBUG
