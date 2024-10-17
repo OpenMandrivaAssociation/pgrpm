@@ -13,7 +13,7 @@ Patch0:		pgrpm-0.1.9-rpm5.patch
 Patch1:		pgrpm-0.1.9-new-pgsql-api-compat.h
 License:	GPL
 Group:		Databases
-Url:		http://pgfoundry.org/projects/pgrpm/
+Url:		https://pgfoundry.org/projects/pgrpm/
 BuildRoot:	%{_tmppath}/%{name}-buildroot
 BuildRequires:	rpm-devel postgresql-devel
 %if %{?pgmodules_req:1}%{!?pgmodules_req:0}
